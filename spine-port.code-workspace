@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "spine-port",
+			"path": "."
+		},
+		{
+			"name": "spine-cpp",
+			"path": "../spine-runtimes/spine-cpp"
+		},
+		{
+			"name": "spine-libgdx",
+			"path": "../spine-runtimes/spine-libgdx"
+		}
+	],
+	"settings": {}
+}

@@ -76,7 +76,7 @@ async function generateLspJson(runtimePath, language, outputFile) {
         console.log(); // Add spacing before lsp-cli output
 
         try {
-            execSync(`lsp-cli "${runtimePath}" ${language} "${outputFile}" --llms`, {
+            execSync(`lsp-cli "${runtimePath}" ${language} "${outputFile}"`, {
                 stdio: 'inherit'
             });
         } catch (error) {
@@ -99,6 +99,51 @@ async function generateLspJson(runtimePath, language, outputFile) {
     }
 }
 
+// Helper function to find candidate files for a type in target runtime
+function findCandidateFiles(targetLsp, typeName) {
+    if (!targetLsp) return [];
+    
+    const candidateFiles = new Set();
+    
+    // Recursive function to search for type in symbols and their children
+    function searchSymbol(symbol) {
+        // Check if this symbol matches
+        if (symbol.name === typeName && 
+            ['class', 'interface', 'enum'].includes(symbol.kind)) {
+            // Add declaration file
+            candidateFiles.add(symbol.file);
+            
+            // For C++, also check if there's a definition file
+            if (symbol.definition && symbol.definition.file) {
+                candidateFiles.add(symbol.definition.file);
+            }
+            
+            // Also check children for methods with definitions
+            if (symbol.children) {
+                for (const child of symbol.children) {
+                    if (child.definition && child.definition.file) {
+                        candidateFiles.add(child.definition.file);
+                    }
+                }
+            }
+        }
+        
+        // Search in children
+        if (symbol.children) {
+            for (const child of symbol.children) {
+                searchSymbol(child);
+            }
+        }
+    }
+    
+    // Search through all top-level symbols
+    for (const symbol of targetLsp.symbols) {
+        searchSymbol(symbol);
+    }
+    
+    return Array.from(candidateFiles);
+}
+
 // Helper function to extract types from Java file using LSP data
 function extractTypesFromFile(lspData, filePath) {
     const types = [];
@@ -107,8 +152,15 @@ function extractTypesFromFile(lspData, filePath) {
     function extractInnerTypes(symbol, isInner = false) {
         // Add the current type
         if (['class', 'interface', 'enum'].includes(symbol.kind)) {
+            // Extract just the type name, removing generic parameters
+            let typeName = symbol.name;
+            const genericIndex = typeName.indexOf('<');
+            if (genericIndex !== -1) {
+                typeName = typeName.substring(0, genericIndex);
+            }
+            
             types.push({
-                name: symbol.name,
+                name: typeName,
                 kind: symbol.kind,
                 startLine: symbol.range.start.line,
                 endLine: symbol.range.end.line,
@@ -157,6 +209,8 @@ async function main() {
             { name: 'spine-libgdx', path: path.join(spineRuntimesDir, 'spine-libgdx/spine-libgdx/src'), language: 'java' },
             { name: targetRuntime, ...runtimeConfigs[targetRuntime] }
         ];
+        console.log(`Generating lsp-cli.md...`)
+        execSync(`lsp-cli --llm`);
 
         console.log(`\n${c.bold('Generating LSP data...')}`);
         console.log(c.gray('─'.repeat(60)));
@@ -186,6 +240,21 @@ async function main() {
             }
         } else {
             console.log(`   ${c.yellow('⚠')} spine-libgdx.json not found`);
+        }
+
+        // Load the target runtime LSP data for finding candidates
+        console.log(`\n${c.blue('→')} Loading ${targetRuntime} LSP data for candidate detection...`);
+        let targetLsp = null;
+        const targetLspPath = path.join(process.cwd(), `${targetRuntime}.json`);
+        if (fs.existsSync(targetLspPath)) {
+            try {
+                targetLsp = JSON.parse(fs.readFileSync(targetLspPath, 'utf8'));
+                console.log(`   ${c.green('✓')} Loaded ${c.cyan(targetLsp.symbols.length)} symbols`);
+            } catch (error) {
+                console.error(`   ${c.yellow('⚠')} Warning: Could not parse ${targetRuntime}.json: ${error.message}`);
+            }
+        } else {
+            console.log(`   ${c.yellow('⚠')} ${targetRuntime}.json not found`);
         }
 
         // Get list of changed Java files in spine-libgdx
@@ -228,6 +297,13 @@ async function main() {
                             // If same kind, sort by name
                             return a.name.localeCompare(b.name);
                         });
+                        
+                        // Find candidate files for each type
+                        types.forEach(type => {
+                            type.candidateFiles = findCandidateFiles(targetLsp, type.name);
+                            type.portingState = 'pending';
+                        });
+                        
                         entry.types = types;
                     }
                 }
@@ -238,14 +314,14 @@ async function main() {
 
         // Sort files by type content and count
         const typeOrder = { 'enum': 0, 'interface': 1, 'class': 2 };
-        
+
         portingOrder.sort((a, b) => {
             const aTypes = a.types?.length || 0;
             const bTypes = b.types?.length || 0;
-            
+
             // First sort by number of types
             if (aTypes !== bTypes) return aTypes - bTypes;
-            
+
             // For files with the same number of types
             if (aTypes === 1 && bTypes === 1) {
                 // For single-type files, sort by type kind (enum < interface < class)
@@ -254,14 +330,14 @@ async function main() {
                 const kindDiff = typeOrder[aKind] - typeOrder[bKind];
                 if (kindDiff !== 0) return kindDiff;
             }
-            
+
             // If same number and kinds of types, sort by file path
             return a.javaSourcePath.localeCompare(b.javaSourcePath);
         });
 
         // Get target runtime config
         const targetConfig = runtimeConfigs[targetRuntime];
-        
+
         // Create the PortingPlan structure
         const portingPlan = {
             metadata: {

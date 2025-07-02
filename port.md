@@ -24,12 +24,13 @@ Collaborative porting of Spine Runtime skeletal animation library from Java to t
       "javaSourcePath": "/path/to/EnumFile.java",
       "types": [
         {
-          "name": "MixBlend",
+          "name": "Animation",
           "kind": "enum",
           "startLine": 45,
           "endLine": 52,
           "isInner": false,
-          "portingState": "pending"
+          "portingState": "pending",
+          "candidateFiles": ["/path/to/spine-cpp/include/spine/Animation.h", "/path/to/spine-cpp/include/spine/Animation.cpp"]
         }
       ]
     }
@@ -118,7 +119,7 @@ Follow these steps to port each type:
 2. Check for conventions file:
    - Read `${targetRuntime}-conventions.md` (from step 1) in full.
    - If missing:
-      - Use Task agents to analyze targetRuntimePath (from step 1)
+      - Use Task agents in parallel to analyze targetRuntimePath (from step 1)
       - Document all coding patterns and conventions:
          * Class/interface/enum definition syntax
          * Member variable naming (prefixes like m_, _, etc.)
@@ -144,20 +145,15 @@ Follow these steps to port each type:
 
 1. **Find next pending type:**
    ```bash
-   # Get next pending type info
-   jq -r '.portingOrder[] | {file: .javaSourcePath, types: .types[] | select(.portingState == "pending")} | "\(.file)|\(.types.name)|\(.types.kind)|\(.types.startLine)|\(.types.endLine)"' porting-plan.json | head -1
+   # Get next pending type info with candidate files
+   jq -r '.portingOrder[] | {file: .javaSourcePath, types: .types[] | select(.portingState == "pending")} | "\(.file)|\(.types.name)|\(.types.kind)|\(.types.startLine)|\(.types.endLine)|\(.types.candidateFiles | join(","))"' porting-plan.json | head -1
    ```
 
-   Then locate in target runtime:
-   ```bash
-   # Replace TYPE_NAME with actual type name from above
-   jq -r --arg t "TYPE_NAME" '(.symbols[] | select(.name == $t) | .file), (.symbols[] | .. | objects | select(.name? == $t) | .file) | select(.) | unique[]' spine-cpp.json
-   ```
+   The candidateFiles array is already populated by generate-porting-plan.js
 
-2. **Open files in VS Code:**
-   - If TARGET_FILES is empty: Open just Java file at line range
-   - If TARGET_FILES exists: Batch open Java + target files
-   - For C++: May have both .h and .cpp files
+2. **Open files in VS Code via vs-claude (for user review):**
+   - Open Java file and Java file git diff (from prevBranch to currentBranch)
+   - If candidateFiles exists: open all candidate files
 
 3. **Confirm with user:**
    - Ask: "Port this type? (y/n)"
@@ -172,13 +168,14 @@ Follow these steps to port each type:
 
 5. **Port the type:**
    - Follow conventions from ${targetRuntime}-conventions.md
-   - For C++: Create .h/.cpp if missing
+   - If target file(s) don't exist, create them and open them for the user via vs-claude
    - Port incrementally:
      * Structure first (fields, method signatures)
      * Then method implementations
      * For C++: Run `./compile_cpp.js` after each method
    - Use MultiEdit for all changes to one file
    - Ensure 100% functional parity
+   - Add or update jsdoc, doxygen, etc. based on Javadocs.
 
 6. **Get user confirmation:**
    - Show what was ported
