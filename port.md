@@ -87,6 +87,24 @@ jq -r '.symbols[] | select(.children[]? | select(.kind | IN("class", "interface"
 
 You MUST use `jq` queries on these files instead of grep or ripgrep to minimize the number of turns you need, and the number of tokens in your context.
 
+### Progress Tracking
+
+Monitor porting progress using these jq commands:
+
+```bash
+# Get overall progress percentage
+jq -r '.portingOrder | map(.types[]) | "\(([.[] | select(.portingState == "done")] | length)) types ported out of \(length) total (\(([.[] | select(.portingState == "done")] | length) * 100 / length | floor)% complete)"' porting-plan.json
+
+# Count types by state
+jq -r '.portingOrder | map(.types[]) | group_by(.portingState) | map({state: .[0].portingState, count: length}) | sort_by(.state)' porting-plan.json
+
+# List all completed types
+jq -r '.portingOrder | map(.types[] | select(.portingState == "done") | .name) | sort | join(", ")' porting-plan.json
+
+# Find remaining types to port
+jq -r '.portingOrder | map(.types[] | select(.portingState == "pending") | .name) | length' porting-plan.json
+```
+
 ### Compile Testing
 
 For C++, test compile individual files during porting:
@@ -105,6 +123,8 @@ Follow these steps to port each type:
 
 ### 1. Setup (One-time)
 
+DO NOT use the TodoWrite and TodoRead tools for this phase!
+
 1. Read metadata from porting-plan.json:
    ```bash
    jq '.metadata' porting-plan.json
@@ -116,30 +136,31 @@ Follow these steps to port each type:
    - targetRuntimePath (e.g., "/path/to/spine-cpp/spine-cpp")
    - targetRuntimeLanguage (e.g., "cpp")
 
-2. Check for conventions file:
-   - Read `${targetRuntime}-conventions.md` (from step 1) in full.
-   - If missing:
-      - Use Task agents in parallel to analyze targetRuntimePath (from step 1)
-      - Document all coding patterns and conventions:
-         * Class/interface/enum definition syntax
-         * Member variable naming (prefixes like m_, _, etc.)
-         * Method naming conventions (camelCase vs snake_case)
-         * Inheritance syntax
-         * File organization (single file vs header/implementation)
-         * Namespace/module/package structure
-         * Memory management (GC, manual, smart pointers)
-         * Error handling (exceptions, error codes, Result types)
-         * Documentation format (Doxygen, JSDoc, etc.)
-         * Type system specifics (generics, templates)
-         * Property/getter/setter patterns
-   - Agents MUST use ripgrep instead of grep!
-   - Save as ${TARGET}-conventions.md
+2. In parallel
+   a. Check for conventions file:
+      - Read `${targetRuntime}-conventions.md` (from step 1) in full.
+      - If missing:
+         - Use Task agents in parallel to analyze targetRuntimePath (from step 1)
+         - Document all coding patterns and conventions:
+            * Class/interface/enum definition syntax
+            * Member variable naming (prefixes like m_, _, etc.)
+            * Method naming conventions (camelCase vs snake_case)
+            * Inheritance syntax
+            * File organization (single file vs header/implementation)
+            * Namespace/module/package structure
+            * Memory management (GC, manual, smart pointers)
+            * Error handling (exceptions, error codes, Result types)
+            * Documentation format (Doxygen, JSDoc, etc.)
+            * Type system specifics (generics, templates)
+            * Property/getter/setter patterns
+      - Agents MUST use ripgrep instead of grep!
+      - Save as ${TARGET}-conventions.md
 
-3. Read `porting-notes.md`in full
-   - If missing create with content:
-     ```markdown
-     # Porting Notes
-     ```
+   b. Read `porting-notes.md`in full
+      - If missing create with content:
+      ```markdown
+      # Porting Notes
+      ```
 
 ### 2. Port Types (Repeat for each)
 
@@ -160,8 +181,9 @@ Follow these steps to port each type:
    - STOP and wait for confirmation.
 
 4. **Read source files:**
-   - Java: Read the ENTIRE file containing the type (for full context)
-   - Target: If exists, read the ENTIRE file(s)
+   - Note: Read the files in parallel if possible
+   - Java: Read the ENTIRE file so it is fully in your context!
+   - Target: If exists, read the ENTIRE file(s) so they are fully in your context!
    - For large files (>2000 lines): Read in chunks of 1000 lines
    - Read parent types if needed (check extends/implements)
    - Goal: Have complete files in context for accurate porting
@@ -169,16 +191,21 @@ Follow these steps to port each type:
 5. **Port the type:**
    - Follow conventions from ${targetRuntime}-conventions.md
    - If target file(s) don't exist, create them and open them for the user via vs-claude
-   - Port incrementally:
-     * Structure first (fields, method signatures)
-     * Then method implementations
-     * For C++: Run `./compile_cpp.js` after each method
+   - Port incrementally and always ultrathink:
+     * Base on the full content of the files in your context, identify differences and changes that need to be made.
+      * differences can be due to idiomatic differences, or real differences due to new or changed functionality in the reference
+        implementation. Ultrathink to discern which is which.
+     * If changes need to be made:
+       * Structure first (fields, method signatures)
+       * Then method implementations
+       * For C++: Run `./compile_cpp.js` after each method
    - Use MultiEdit for all changes to one file
    - Ensure 100% functional parity
    - Add or update jsdoc, doxygen, etc. based on Javadocs.
 
 6. **Get user confirmation:**
-   - Show what was ported
+   - Open a diff of the files you modified, comparing HEAD to working.
+   - Give the user a summary of what you ported
    - Ask: "Mark as done? (y/n)"
    - If yes, update status:
    ```bash
