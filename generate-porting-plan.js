@@ -84,12 +84,6 @@ async function generateLspJson(runtimePath, language, outputFile) {
             throw error;
         }
 
-        // Rename llms.md to lsp-cli.md if it exists
-        const llmsPath = path.join(process.cwd(), 'llms.md');
-        const lspCliPath = path.join(process.cwd(), 'lsp-cli.md');
-        if (fs.existsSync(llmsPath)) {
-            fs.renameSync(llmsPath, lspCliPath);
-        }
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         const fileSize = (fs.statSync(outputFile).size / 1024 / 1024).toFixed(2);
@@ -102,22 +96,22 @@ async function generateLspJson(runtimePath, language, outputFile) {
 // Helper function to find candidate files for a type in target runtime
 function findCandidateFiles(targetLsp, typeName) {
     if (!targetLsp) return [];
-    
+
     const candidateFiles = new Set();
-    
+
     // Recursive function to search for type in symbols and their children
     function searchSymbol(symbol) {
         // Check if this symbol matches
-        if (symbol.name === typeName && 
+        if (symbol.name === typeName &&
             ['class', 'interface', 'enum'].includes(symbol.kind)) {
             // Add declaration file
             candidateFiles.add(symbol.file);
-            
+
             // For C++, also check if there's a definition file
             if (symbol.definition && symbol.definition.file) {
                 candidateFiles.add(symbol.definition.file);
             }
-            
+
             // Also check children for methods with definitions
             if (symbol.children) {
                 for (const child of symbol.children) {
@@ -127,7 +121,7 @@ function findCandidateFiles(targetLsp, typeName) {
                 }
             }
         }
-        
+
         // Search in children
         if (symbol.children) {
             for (const child of symbol.children) {
@@ -135,12 +129,12 @@ function findCandidateFiles(targetLsp, typeName) {
             }
         }
     }
-    
+
     // Search through all top-level symbols
     for (const symbol of targetLsp.symbols) {
         searchSymbol(symbol);
     }
-    
+
     return Array.from(candidateFiles);
 }
 
@@ -158,7 +152,7 @@ function extractTypesFromFile(lspData, filePath) {
             if (genericIndex !== -1) {
                 typeName = typeName.substring(0, genericIndex);
             }
-            
+
             types.push({
                 name: typeName,
                 kind: symbol.kind,
@@ -209,8 +203,6 @@ async function main() {
             { name: 'spine-libgdx', path: path.join(spineRuntimesDir, 'spine-libgdx/spine-libgdx/src'), language: 'java' },
             { name: targetRuntime, ...runtimeConfigs[targetRuntime] }
         ];
-        console.log(`Generating lsp-cli.md...`)
-        execSync(`lsp-cli --llm`);
 
         console.log(`\n${c.bold('Generating LSP data...')}`);
         console.log(c.gray('─'.repeat(60)));
@@ -297,13 +289,13 @@ async function main() {
                             // If same kind, sort by name
                             return a.name.localeCompare(b.name);
                         });
-                        
+
                         // Find candidate files for each type
                         types.forEach(type => {
                             type.candidateFiles = findCandidateFiles(targetLsp, type.name);
                             type.portingState = 'pending';
                         });
-                        
+
                         entry.types = types;
                     }
                 }

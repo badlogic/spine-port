@@ -1,6 +1,6 @@
 # Spine Runtimes Porting Guide v2
 
-Collaborative porting of Spine Runtime skeletal animation library from Java to target runtime. Work tracked in `porting-plan.json` which has the following format:
+Collaborative porting of changes between two commits in the Spine runtime reference implementation (Java) to a target runtime. Work tracked in `porting-plan.json` which has the following format:
 
 ```json
 {
@@ -57,36 +57,6 @@ mcp__vs-claude__open({"type": "file", "path": "/abs/path/Animation.java", "start
 mcp__vs-claude__open({"type": "gitDiff", "path": "/abs/path/Animation.cpp", "from": "HEAD", "to": "working"});
 ```
 
-### LSP JSON Files
-
-Use spine-libgdx.json and spine-[target].json to navigate directly to types without searching.
-
-You MUST read lsp-cli.md to understand the format of these files!
-
-Examples:
-```bash
-# Find type location in Java reference
-jq -r --arg t "Animation" '.symbols[] | select(.name == $t) | "\(.file):\(.range.start.line + 1)-\(.range.end.line + 1)"' spine-libgdx.json
-
-# Find type location in target runtime
-jq -r --arg t "Animation" '.symbols[] | select(.name == $t) | "\(.file):\(.range.start.line + 1)-\(.range.end.line + 1)"' spine-cpp.json
-
-# Get all methods of a type
-jq -r --arg t "Animation" '.symbols[] | select(.name == $t) | .children[]? | select(.kind == "method") | .name' spine-libgdx.json
-
-# Compare methods between Java and target
-diff <(jq -r --arg t "Animation" '.symbols[] | select(.name == $t) | .children[]? | select(.kind == "method") | .name' spine-libgdx.json | sort) \
-     <(jq -r --arg t "Animation" '.symbols[] | select(.name == $t) | .children[]? | select(.kind == "method") | .name' spine-cpp.json | sort)
-
-# Check if type exists in target
-jq -r --arg t "MixBlend" '.symbols[] | select(.name == $t) | .name' spine-cpp.json || echo "Type not found"
-
-# Find inner types (since they have isInner flag in porting-plan but not in LSP)
-jq -r '.symbols[] | select(.children[]? | select(.kind | IN("class", "interface", "enum"))) | .children[] | select(.kind | IN("class", "interface", "enum")) | .name' spine-libgdx.json
-```
-
-You MUST use `jq` queries on these files instead of grep or ripgrep to minimize the number of turns you need, and the number of tokens in your context.
-
 ### Progress Tracking
 
 Monitor porting progress using these jq commands:
@@ -110,7 +80,7 @@ jq -r '.portingOrder | map(.types[] | select(.portingState == "pending") | .name
 For C++, test compile individual files during porting:
 
 ```bash
-./compile_cpp.js /path/to/spine-cpp/spine-cpp/src/spine/Animation.cpp
+./compile-cpp.js /path/to/spine-cpp/spine-cpp/src/spine/Animation.cpp
 ```
 
 For other languages, we can not compile individual files and should not try to.
@@ -156,7 +126,7 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
       - Agents MUST use ripgrep instead of grep!
       - Save as ${TARGET}-conventions.md
 
-   b. Read `porting-notes.md`in full
+   b. Read `porting-notes.md` in full
       - If missing create with content:
       ```markdown
       # Porting Notes
@@ -198,7 +168,7 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
      * If changes need to be made:
        * Structure first (fields, method signatures)
        * Then method implementations
-       * For C++: Run `./compile_cpp.js` after each method
+       * For C++: Run `./compile-cpp.js` after each method
    - Use MultiEdit for all changes to one file
    - Ensure 100% functional parity
    - Add or update jsdoc, doxygen, etc. based on Javadocs.
