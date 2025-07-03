@@ -1,4 +1,4 @@
-# Spine Runtimes Porting Guide v2
+# Spine Runtimes Porting Program
 
 Collaborative porting of changes between two commits in the Spine runtime reference implementation (Java) to a target runtime. Work tracked in `porting-plan.json` which has the following format:
 
