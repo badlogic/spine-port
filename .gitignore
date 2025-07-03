@@ -14,6 +14,7 @@ lsp-cli.md
 *.swp
 *.swo
 *~
+*.code-workspace
 
 # OS
 .DS_Store
