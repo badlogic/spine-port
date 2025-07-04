@@ -2,7 +2,10 @@
 
 Collaborative porting of changes between two commits in the Spine runtime
 reference implementation (Java) to a target runtime. Work tracked in
-`porting-plan.json` which has the following format:
+`porting-plan.json` which has the following format.
+
+**Important**: All line and column numbers in porting-plan.json and the spine-xxx.json
+files are 1-based (matching what editors and error messages show), not 0-based.
 
 ```json
 {
@@ -28,8 +31,8 @@ reference implementation (Java) to a target runtime. Work tracked in
         {
           "name": "Animation",
           "kind": "enum",
-          "startLine": 45,
-          "endLine": 52,
+          "startLine": 45,    // Line where the type declaration starts (e.g., "public enum Animation {")
+          "endLine": 52,      // Line where the type ends (includes closing brace)
           "isInner": false,
           "portingState": "pending",
           "candidateFiles": ["/path/to/spine-cpp/include/spine/Animation.h", "/path/to/spine-cpp/include/spine/Animation.cpp"]
@@ -77,6 +80,41 @@ jq -r '.portingOrder | map(.types[] | select(.portingState == "done") | .name) |
 # Find remaining types to port
 jq -r '.portingOrder | map(.types[] | select(.portingState == "pending") | .name) | length' porting-plan.json
 ```
+
+### Reading Java Types
+
+Extract a type's source code from the current version:
+
+```bash
+./read-java-type.js <type-name>
+
+# Example:
+./read-java-type.js Property
+```
+
+Returns the type's source code with each line prefixed by its line number:
+- Exact indentation preserved (including tabs)
+- Inner class definitions removed (replaced by count at end of output)
+- Includes a summary of excluded inner classes at the end
+
+### Type Diff Analysis
+
+Get an inline diff showing changes to a specific type:
+
+```bash
+./read-java-type-diff.js <type-name>
+
+# Example:
+./read-java-type-diff.js Property
+```
+
+Returns a focused diff of just the specified type:
+- Shows only changes to the type itself (excludes inner class changes)
+- `+` prefix for added lines
+- `-` prefix for removed lines
+- Single space prefix for unchanged lines
+- No line numbers
+- Includes a summary of excluded inner classes at the end
 
 ### Compile Testing
 
@@ -148,35 +186,70 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
    ```
 
 2. **Open files in VS Code via vs-claude (for user review):**
-   - Open Java file and Java file git diff (from prevBranch to currentBranch)
-   - If candidateFiles exists: open all candidate files
+   - Open Java file and Java file git diff (from prevBranch to currentBranch) using vs-claude
+   - If candidateFiles exists: open all candidate files using vs-claude
 
 3. **Confirm with user:**
    - Ask: "Port this type? (y/n)"
    - STOP and wait for confirmation.
 
-4. **Read source files:**
-   - Note: Read the files in parallel if possible
-   - Java: Read the ENTIRE file so it is fully in your context!
-   - Target: If exists, read the ENTIRE file(s) so they are fully in your context!
-   - For large files (>2000 lines): Read in chunks of 1000 lines
-   - Read parent types if needed (check extends/implements)
-   - Goal: Have complete files in context for accurate porting
+4. **Read source files and analyze changes:**
+   - **Read the Java type diff to see current code and changes:**
+     ```bash
+     ./read-java-type-diff.js <type-name>
+     ```
+     - If the diff shows only unchanged lines (no `+` or `-` prefixes):
+       - Tell user: "No changes detected in <type-name>. Mark as done? (y/n)"
+       - If yes, skip to step 6 to update status
+       - If no, continue to analyze target files (changes might be needed there)
+
+   - **If type extends/implements others, read parent types:**
+     - Check the type declaration for extends/implements
+     - Use `./read-java-type.js <parent-type>` for each parent
+     - Continue recursively until you have the full inheritance chain
+
+   - **Read target candidateFiles if they exist:**
+     - Check porting-plan.json for the candidateFiles array
+     - Read each candidate file in full to understand current target implementation
 
 5. **Port the type:**
-   - Follow conventions from ${targetRuntime}-conventions.md
-   - If target file(s) don't exist, create them and open them for the user via vs-claude
-   - Port incrementally and always ultrathink:
-     * Base on the full content of the files in your context, identify differences and changes that need to be made.
-      * differences can be due to idiomatic differences, or real differences due to new or changed functionality in the reference
-        implementation. Ultrathink to discern which is which.
-     * If changes need to be made:
-       * Structure first (fields, method signatures)
-       * Then method implementations
-   - Use MultiEdit for all changes to one file
-   - Ensure 100% functional parity
-   - For C++: Run `./compile-cpp.js` after each method
-   - Add or update jsdoc, doxygen, etc. based on Javadocs.
+   - CRITICAL: The goal is 100% functional parity with Java (current branch)
+   - Analysis approach:
+     * First, understand what the Java implementation currently has (all fields, methods, inner classes)
+     * Second, understand what the target implementation currently has
+     * Third, identify the delta:
+       1. What's in Java but missing from target → ADD
+       2. What's in target but not in Java → REMOVE (unless it's idiomatic)
+       3. What exists in both but differs → UPDATE to match Java
+       4. What's identical → LEAVE ALONE
+
+   - Decision framework for each difference:
+     * Is this an idiomatic difference?
+       - If yes → Keep target's idiomatic approach but ensure same functionality
+     * Is this old functionality that Java removed?
+       - If yes → Remove from target
+     * Is this new functionality that Java added?
+       - If yes → Add to target
+     * Is this a behavioral difference?
+       - If yes → Update target to match Java behavior exactly
+
+   - Implementation steps:
+     * If target file(s) don't exist, create them following conventions
+     * Make changes systematically:
+       1. Remove obsolete code first
+       2. Update existing code (signatures, then implementations)
+       3. Add new code last
+     * Use MultiEdit for all changes to one file
+     * For C++: Run `./compile-cpp.js` after significant changes
+     * Update documentation (doxygen/jsdoc) to match Java
+
+   - Verification checklist:
+     * All Java public/protected members exist in target
+     * No extra public/protected members in target (unless idiomatic)
+     * All method behaviors match exactly, especially math heavy code
+     * All constants and enums match
+     * Memory management is correct in unmanaged languages, e.g. C++
+     * The target runtime code follows target language conventions
 
 6. **Get user confirmation:**
    - Open a diff of the files you modified, comparing HEAD to working.

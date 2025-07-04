@@ -93,6 +93,38 @@ async function generateLspJson(runtimePath, language, outputFile) {
     }
 }
 
+// Helper function to convert LSP data from 0-based to 1-based indexing
+function convertTo1Based(lspData) {
+    function convertPosition(pos) {
+        if (pos) {
+            pos.line = (pos.line || 0) + 1;
+            pos.character = (pos.character || 0) + 1;
+        }
+    }
+
+    function convertRange(range) {
+        if (range) {
+            convertPosition(range.start);
+            convertPosition(range.end);
+        }
+    }
+
+    function convertSymbol(symbol) {
+        convertRange(symbol.range);
+        convertRange(symbol.selectionRange);
+        if (symbol.definition) {
+            convertRange(symbol.definition.range);
+        }
+        if (symbol.children) {
+            symbol.children.forEach(convertSymbol);
+        }
+    }
+
+    if (lspData && lspData.symbols) {
+        lspData.symbols.forEach(convertSymbol);
+    }
+}
+
 // Helper function to find candidate files for a type in target runtime
 function findCandidateFiles(targetLsp, typeName) {
     if (!targetLsp) return [];
@@ -156,8 +188,8 @@ function extractTypesFromFile(lspData, filePath) {
             types.push({
                 name: typeName,
                 kind: symbol.kind,
-                startLine: symbol.range.start.line,
-                endLine: symbol.range.end.line,
+                startLine: symbol.range.start.line,  // Already 1-based after conversion
+                endLine: symbol.range.end.line,      // Already 1-based after conversion
                 isInner: isInner,
                 portingState: 'pending'
             });
@@ -198,13 +230,54 @@ async function main() {
             'spine-ts': { path: path.join(spineRuntimesDir, 'spine-ts/spine-core'), language: 'typescript' }
         };
 
+        // First, generate LSP data for old branch using worktree
+        console.log(`\n${c.bold('Creating temporary worktree for old branch...')}`);
+        const worktreePath = path.join('/tmp', `spine-old-${Date.now()}`);
+        
+        try {
+            // Create worktree for old branch
+            console.log(`   ${c.gray('Creating worktree at:')} ${worktreePath}`);
+            execSync(`git worktree add "${worktreePath}" "${fromCommit}"`, { 
+                cwd: spineRuntimesDir,
+                stdio: 'pipe'
+            });
+            console.log(`   ${c.green('✓')} Worktree created for ${c.cyan(fromCommit)}`);
+            
+            // Generate LSP data for old spine-libgdx
+            const oldLibgdxPath = path.join(worktreePath, 'spine-libgdx/spine-libgdx/src');
+            const oldOutputFile = path.join(process.cwd(), 'spine-libgdx-old.json');
+            
+            console.log(`\n${c.blue('→')} Generating LSP data for old spine-libgdx (${fromCommit})`);
+            await generateLspJson(oldLibgdxPath, 'java', oldOutputFile);
+            
+        } finally {
+            // Clean up worktree
+            console.log(`\n${c.blue('→')} Cleaning up worktree...`);
+            try {
+                execSync(`git worktree remove "${worktreePath}" --force`, {
+                    cwd: spineRuntimesDir,
+                    stdio: 'pipe'
+                });
+                console.log(`   ${c.green('✓')} Worktree removed`);
+            } catch (error) {
+                console.log(`   ${c.yellow('⚠')} Failed to remove worktree: ${error.message}`);
+                // Try manual cleanup
+                try {
+                    execSync(`rm -rf "${worktreePath}"`, { stdio: 'pipe' });
+                    execSync(`git worktree prune`, { cwd: spineRuntimesDir, stdio: 'pipe' });
+                } catch (cleanupError) {
+                    console.log(`   ${c.yellow('⚠')} Manual cleanup also failed`);
+                }
+            }
+        }
+
         // Generate LSP data for spine-libgdx and target runtime only
         const runtimesToGenerate = [
             { name: 'spine-libgdx', path: path.join(spineRuntimesDir, 'spine-libgdx/spine-libgdx/src'), language: 'java' },
             { name: targetRuntime, ...runtimeConfigs[targetRuntime] }
         ];
 
-        console.log(`\n${c.bold('Generating LSP data...')}`);
+        console.log(`\n${c.bold('Generating LSP data for current branch...')}`);
         console.log(c.gray('─'.repeat(60)));
 
         for (const runtime of runtimesToGenerate) {
@@ -219,6 +292,23 @@ async function main() {
 
         console.log('\n' + c.gray('─'.repeat(60)));
 
+        // Load and convert the old spine-libgdx LSP data
+        console.log(`\n${c.blue('→')} Loading spine-libgdx-old LSP data...`);
+        const oldLibgdxLspPath = path.join(process.cwd(), 'spine-libgdx-old.json');
+        if (fs.existsSync(oldLibgdxLspPath)) {
+            try {
+                const oldLsp = JSON.parse(fs.readFileSync(oldLibgdxLspPath, 'utf8'));
+                console.log(`   ${c.green('✓')} Loaded ${c.cyan(oldLsp.symbols.length)} symbols`);
+                // Convert to 1-based indexing
+                convertTo1Based(oldLsp);
+                // Save the converted version back
+                fs.writeFileSync(oldLibgdxLspPath, JSON.stringify(oldLsp, null, 2));
+                console.log(`   ${c.green('✓')} Converted to 1-based indexing`);
+            } catch (error) {
+                console.error(`   ${c.yellow('⚠')} Warning: Could not parse spine-libgdx-old.json: ${error.message}`);
+            }
+        }
+
         // Load the spine-libgdx LSP data for type extraction
         console.log(`\n${c.blue('→')} Loading spine-libgdx LSP data for type extraction...`);
         let spineLibgdxLsp = null;
@@ -227,6 +317,11 @@ async function main() {
             try {
                 spineLibgdxLsp = JSON.parse(fs.readFileSync(libgdxLspPath, 'utf8'));
                 console.log(`   ${c.green('✓')} Loaded ${c.cyan(spineLibgdxLsp.symbols.length)} symbols`);
+                // Convert to 1-based indexing
+                convertTo1Based(spineLibgdxLsp);
+                // Save the converted version back
+                fs.writeFileSync(libgdxLspPath, JSON.stringify(spineLibgdxLsp, null, 2));
+                console.log(`   ${c.green('✓')} Converted to 1-based indexing`);
             } catch (error) {
                 console.error(`   ${c.yellow('⚠')} Warning: Could not parse spine-libgdx.json: ${error.message}`);
             }
@@ -242,6 +337,11 @@ async function main() {
             try {
                 targetLsp = JSON.parse(fs.readFileSync(targetLspPath, 'utf8'));
                 console.log(`   ${c.green('✓')} Loaded ${c.cyan(targetLsp.symbols.length)} symbols`);
+                // Convert to 1-based indexing
+                convertTo1Based(targetLsp);
+                // Save the converted version back
+                fs.writeFileSync(targetLspPath, JSON.stringify(targetLsp, null, 2));
+                console.log(`   ${c.green('✓')} Converted to 1-based indexing`);
             } catch (error) {
                 console.error(`   ${c.yellow('⚠')} Warning: Could not parse ${targetRuntime}.json: ${error.message}`);
             }
