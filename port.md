@@ -1,6 +1,8 @@
 # Spine Runtimes Porting Program
 
-Collaborative porting of changes between two commits in the Spine runtime reference implementation (Java) to a target runtime. Work tracked in `porting-plan.json` which has the following format:
+Collaborative porting of changes between two commits in the Spine runtime
+reference implementation (Java) to a target runtime. Work tracked in
+`porting-plan.json` which has the following format:
 
 ```json
 {
@@ -40,7 +42,8 @@ Collaborative porting of changes between two commits in the Spine runtime refere
 ## Tools
 
 ### VS Claude
-Use the vs-claude MCP server tools for opening files and diffs for the user during porting.
+Use the vs-claude MCP server tools for opening files and diffs for the user
+during porting.
 
 ```javascript
 // Open multiple files at once (batch operations)
@@ -87,7 +90,11 @@ For other languages, we can not compile individual files and should not try to.
 
 ## Workflow
 
-Port one type at a time. Ensure the target runtime implementation is functionally equivalent to the reference implementation. The APIs must match, bar idiomatic differences, including type names, field names, method names, enum names, parameter names and so on. Implementations of methods must match EXACTLY, bar idiomatic differences, such as differences in collection types.
+Port one type at a time. Ensure the target runtime implementation is functionally
+equivalent to the reference implementation. The APIs must match, bar idiomatic
+differences, including type names, field names, method names, enum names,
+parameter names and so on. Implementations of methods must match EXACTLY, bar
+idiomatic differences, such as differences in collection types.
 
 Follow these steps to port each type:
 
@@ -99,12 +106,11 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
    ```bash
    jq '.metadata' porting-plan.json
    ```
-   If this fails, abort and tell user to run generate-porting-plan.js
-
-   Store these values for later use:
-   - targetRuntime (e.g., "spine-cpp")
-   - targetRuntimePath (e.g., "/path/to/spine-cpp/spine-cpp")
-   - targetRuntimeLanguage (e.g., "cpp")
+   - If this fails, abort and tell user to run generate-porting-plan.js
+   - Store these values for later use:
+      - targetRuntime (e.g., "spine-cpp")
+      - targetRuntimePath (e.g., "/path/to/spine-cpp/spine-cpp")
+      - targetRuntimeLanguage (e.g., "cpp")
 
 2. In parallel
    a. Check for conventions file:
@@ -125,6 +131,7 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
             * Property/getter/setter patterns
       - Agents MUST use ripgrep instead of grep!
       - Save as ${TARGET}-conventions.md
+      - STOP and ask the user for a review
 
    b. Read `porting-notes.md` in full
       - If missing create with content:
@@ -139,8 +146,6 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
    # Get next pending type info with candidate files
    jq -r '.portingOrder[] | {file: .javaSourcePath, types: .types[] | select(.portingState == "pending")} | "\(.file)|\(.types.name)|\(.types.kind)|\(.types.startLine)|\(.types.endLine)|\(.types.candidateFiles | join(","))"' porting-plan.json | head -1
    ```
-
-   The candidateFiles array is already populated by generate-porting-plan.js
 
 2. **Open files in VS Code via vs-claude (for user review):**
    - Open Java file and Java file git diff (from prevBranch to currentBranch)
@@ -168,9 +173,9 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
      * If changes need to be made:
        * Structure first (fields, method signatures)
        * Then method implementations
-       * For C++: Run `./compile-cpp.js` after each method
    - Use MultiEdit for all changes to one file
    - Ensure 100% functional parity
+   - For C++: Run `./compile-cpp.js` after each method
    - Add or update jsdoc, doxygen, etc. based on Javadocs.
 
 6. **Get user confirmation:**
