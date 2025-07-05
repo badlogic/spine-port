@@ -211,6 +211,7 @@ DO NOT use the TodoWrite and TodoRead tools for this phase!
    - **Read target candidateFiles if they exist:**
      - Check porting-plan.json for the candidateFiles array
      - Read each candidate file in full to understand current target implementation
+     - Read the candidate files in parallel
 
 5. **Port the type:**
    - CRITICAL: The goal is 100% functional parity with Java (current branch)
