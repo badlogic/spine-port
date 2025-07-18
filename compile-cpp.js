@@ -10,7 +10,7 @@ if (process.argv.length < 3) {
 
 const cppFile = process.argv[2];
 const spineRuntimesDir = '/Users/badlogic/workspaces/spine-runtimes';
-const spineCppInclude = path.join(spineRuntimesDir, 'spine-cpp/spine-cpp/include');
+const spineCppInclude = path.join(spineRuntimesDir, 'spine-cpp/include');
 
 try {
     // Compile command with include paths
